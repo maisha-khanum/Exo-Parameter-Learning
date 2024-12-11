@@ -7,7 +7,7 @@ from scipy.sparse.linalg import svds
 import matplotlib.pyplot as plt
 from helper import init_constants, reinit_bin_upd, upd_plot_data, sample_param, f_multi, f_all, rank_params, cma_multi, cma_update, init_opt_vars, init_xmean, constrain_params, plot_single_mode
 from bins_helper import initialize_params, calculate_constrained_bin_edges, calculate_bin_edges_from_sizes, find_max_below_threshold
-from viz_helper import plot_density_with_colored_bins
+from viz_helper import *
 import os
 from scipy.stats import norm
 from tqdm import tqdm
@@ -23,12 +23,12 @@ min_bin_size = 10
 # num_gens_cma = 40
 lambda_cma = 10  # Number of samples per generation
 convergence_threshold = 0.05  # Threshold for average sigma
-c_penalty = 0.0001  # Cost factor for the number of bins
+c_penalty = 0.001  # Cost factor for the number of bins
 meas_noise = 0.001
 init_sigma_val = 0.2
 
 # CMA parameters (tweak these to change the outcome of the simulation)
-num_gens_cma = 9 # number of generations before simulation terminates (adjust for longer or shorter optimizations)
+num_gens_cma = 20 # number of generations before simulation terminates (adjust for longer or shorter optimizations)
 meas_noise = 0.001 # noise in CMA estimates
 offset_std_in_params = 0.1 # standard deviation of the "true" parameters, increase to make the optimal parameters spread over a larger range
 scalar_std_in_params = 0.1 # underlying scalar offset of "true" parameters, increase to make the optimal parameters spread over a larger range
@@ -69,7 +69,7 @@ f_mult = np.random.uniform(low=1-scalar_std_in_params, high=1+scalar_std_in_para
 if speed_type == 'normal':
     cond_speeds = np.random.normal(loc=speed_mean, scale=speed_std, size=num_gens_cma*λ)
 elif speed_type == 'uniform':
-    cond_speeds = np.random.uniform(low=speed_mean-speed_std, high=speed_mean+speed_std, size=num_gens_cma*λ)
+    cond_speeds = np.random.uniform(low=speed_mean-2*speed_std, high=speed_mean+2*speed_std, size=num_gens_cma*λ)
 
 # Q-Learning parameters
 alpha = 0.1  # Learning rate
@@ -154,12 +154,15 @@ def cma_simulation(state):
         # new_params = np.zeros(3)
         # new_params[0] = bin_gen_params[bin_idx, cond_counter[bin_idx], 0] * weight
         # new_params[2] = bin_gen_params[bin_idx, cond_counter[bin_idx], 0] * rise_scalar
+        new_params = []
+        new_params.append(bin_gen_params[bin_idx, cond_counter[bin_idx], 0] * weight)
+        new_params.append(bin_gen_params[bin_idx, cond_counter[bin_idx], 0] * rise_scalar)
         # print("New params:", new_params)
     
     g = find_max_below_threshold(plot_sig_data, convergence_threshold) # for minimizing g
-    sigma = np.max(plot_sig_data[:, -3])
+    sigma = np.max(plot_sig_data[:, -10])
 
-    return g, sigma
+    return g, sigma, new_params
     # return {
     #     "opt_results": bin_opt_vars,
     #     "plot_sig_data": plot_sig_data,
@@ -209,34 +212,43 @@ def reward_function(g, sigma, num_bins, c_penalty): # TODO
 # State 0
 def initialize_bins(): # TODO
     """Initialize a random bin configuration."""
-    return [20, 20, 60]  # Example: 3 bins (0-20%, 20-40%, 40-100%)
+    return [30,40,30]  # Example: 3 bins (0-20%, 20-40%, 40-100%)
 
 # Initialize Q-table
 # Q = defaultdict(lambda: np.zeros(max_bins - min_bins + 1))  # Actions: possible bin splits
 Q = {}
 
+# Track best state over episodes
+best_states_per_episode = []
+best_sigma_per_episode = []
+best_param_per_episode = []
 # Q-learning loop
+max_no_improvement_steps = 10  # Maximum steps without improvement before terminating the episode
+no_improvement_count = 0  # Counter for steps without improvement
+
 for episode in tqdm(range(num_episodes)):
     # Initialize environment
     state = initialize_bins()
     epsilon = 0.1  # Exploration rate
     total_reward = 0
     done = False
+    best_reward = float('-inf')
+    last_state = None  # Variable to store the last state (to prevent undo action)
 
     while not done:
-        # Choose action using epsilon-greedy policy, TODO DECIDE HOW MUCH TO SPLIT BY
+        best_state = state
+
+        # Generate actions
         actions = []
         if len(state) > 1:
-            adjacent_pairs = [(i, i+1) for i in range(len(state) - 1)]
+            adjacent_pairs = [(i, i + 1) for i in range(len(state) - 1)]
             random.shuffle(adjacent_pairs)
             for i, j in adjacent_pairs:
                 actions.append(('merge', i, j))
 
-        # Split action: Split bins into two, ensuring one size is divisible by 20
         if len(state) < max_num_bins:
             for i, bin_size in enumerate(state):
                 if bin_size > min_bin_size:
-                    # Find all valid splits where both resulting bins are divisible by 20
                     valid_splits = [
                         (x, bin_size - x)
                         for x in range(min_bin_size, bin_size, min_bin_size)
@@ -246,50 +258,116 @@ for episode in tqdm(range(num_episodes)):
                         actions.append(('split', i, split))
 
         actions += [('no_op',)]  # Include no-op action
-                
+
+        # Remove actions that would undo the previous one (prevent returning to the last state)
+        if last_state is not None:
+            if state == last_state:  # If we are already in the last state, don't split or merge to it
+                actions = [a for a in actions if a[0] != 'merge' and a[0] != 'split']
+        
+        # Choose action using epsilon-greedy policy
         if np.random.uniform(0, 1) < epsilon:
-            print("EXPLORE")
             action = random.choice(actions)  # Explore
         else:
             action_values = [Q.get((tuple(state), a), 0) for a in actions]
             action = actions[np.argmax(action_values)]  # Exploit
 
-        # Apply action to update state
+        # Apply action
         new_state = apply_action(state, action)
 
         # Simulate CMA-ES optimization
-        g, sigma = cma_simulation(new_state)
+        g, sigma, new_params = cma_simulation(new_state)
 
         # Compute reward
         r = reward_function(g, sigma, len(new_state), c_penalty)
 
         # Update Q-value
-        if (tuple(state), action) not in Q:
-            Q[(tuple(state), action)] = 0
-        Q[(tuple(state), action)] += 0.1 * (r + 0.9 * max(Q.get((tuple(new_state), a), 0) for a in actions) - Q[(tuple(state), action)])
+        Q[(tuple(state), action)] = Q.get((tuple(state), action), 0) + \
+            0.1 * (r + 0.9 * max(Q.get((tuple(new_state), a), 0) for a in actions) - Q.get((tuple(state), action), 0))
 
-        # Update state and total reward
+        # Update best state if reward improves
+        if r > best_reward:
+            best_state = new_state
+            best_reward = r
+            no_improvement_count = 0  # Reset counter as the reward improved
+        else:
+            no_improvement_count += 1  # Increment counter if reward didn't improve
+        
+        # print(no_improvement_count)
+
+        # Update state and track last state
+        last_state = state  # Store current state as the last state
         state = new_state
-        total_reward += r
 
-        print(np.mean(sigma))
-        done = True
-        # Termination condition (e.g., convergence met)
-        if np.mean(sigma) < convergence_threshold:
-            done = True
+        # Check if no improvement has occurred for too many steps
+        if no_improvement_count >= max_no_improvement_steps:
+            done = True  # End the episode
 
-    # Reduce epsilon over time to favor exploitation
+    best_sigma_per_episode.append(sigma)
+    best_states_per_episode.append(len(best_state))
+    best_param_per_episode.append(new_params)
+
+    # Update epsilon for exploration
     epsilon = max(0.01, epsilon * 0.99)
 
     # Log progress
-    if (episode + 1) % 50 == 0:
-        print(f"Episode {episode + 1}/{num_episodes}, Total Reward: {total_reward}")
+    if (episode + 1) % 10 == 0:
+        print(f"Episode {episode + 1}/{num_episodes}, Best Reward: {best_reward}")
 
-print(Q)
+    # Log progress
+    if (episode + 1) % 10 == 0:
+        print(f"Episode {episode + 1}/{num_episodes}, Best Reward: {best_reward}")
+
+
+
+# print(Q)
 
 # Extract optimal policy
-optimal_policy = {state: np.argmax(actions) + min_bins for state, actions in Q.items()}
-print("Optimal policy (num_bins per state):", optimal_policy)
+# optimal_policy = {state: np.argmax(actions) + min_bins for state, actions in Q.items()}
+# print("Optimal policy (num_bins per state):", optimal_policy)
+
+
+# Extract optimal policy and best state
+optimal_policy = {}
+best_state = None
+max_q_value = float('-inf')
+
+for state_action, value in Q.items():
+    state, action = state_action
+    
+    # Update optimal policy
+    if state not in optimal_policy or Q[(state, optimal_policy[state])] < value:
+        optimal_policy[state] = action
+    
+    # Track the best state
+    if value > max_q_value:
+        max_q_value = value
+        best_state = state
+
+# Print results
+print("Optimal policy (state -> action):", optimal_policy)
+print("Best state:", best_state)
+print("Maximum Q-value:", max_q_value)
+
+print(min(best_sigma_per_episode))
 
 # Visualizations
-# plot_density_with_colored_bins(cond_speeds, bin_edges)
+# Get the directory of the current script
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Define the path for the visualization folder relative to the script directory
+visualization_folder = os.path.join(script_dir, 'visualizations')
+
+# Create the visualization folder if it doesn't exist
+os.makedirs(visualization_folder, exist_ok=True)
+
+# Save the density plot with colored bins
+best_bins = calculate_bin_edges_from_sizes(speed_mean, speed_std, list(best_state), min_val, max_val)
+plot_density_with_colored_bins(cond_speeds, best_bins)
+# plt.savefig(os.path.join(visualization_folder, 'density_with_colored_bins.png'), dpi=300)
+# plt.close()
+
+# Save the plot for the number of bins in the best state per episode
+plot_bestsigma_per_episode_comp(num_episodes, best_sigma_per_episode, 0.07390039505777192)
+
+# Save the histogram of bin sizes across all episodes
+plot_bestbin_hist(best_states_per_episode)

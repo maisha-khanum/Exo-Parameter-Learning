@@ -134,7 +134,7 @@ def init_opt_vars(x_mean, sigma, N):
     return opt_vars
     # return np.copy(opt_vars)
 
-# set the mean value of the optimization parameters based on the defined ranges of walking speed (def_speeds) and defined torque parameters (def_params)
+# # set the mean value of the optimization parameters based on the defined ranges of walking speed (def_speeds) and defined torque parameters (def_params)
 def init_xmean(bins, N, def_params, def_speeds):
     new_params = np.zeros((len(bins)-1, N))
     new_speeds = np.zeros(len(bins)-1)
@@ -172,46 +172,115 @@ def grabMeans(save_mean_data, gen_counter):
     savecat = np.concatenate(save,axis=0)
     return savecat
 
-# plot the parameter values for each of the three bins of walking speed (slow, normal, fast)
+# # plot the parameter values for each of the three bins of walking speed (slow, normal, fast)
+# def plot_single_mode(plot_sig_data, plot_rew_data, plot_mean_data, goal_all, num_gens_cma, spd_bins, bins, gen_counter):
+#     all_mean_data = np.copy(plot_mean_data)
+#     min_gen_plots = num_gens_cma + 1
+
+#     # Plot sigma (optimization covariance) over time
+#     plt.figure()
+#     labels = [f"{bins[i]} to {bins[i+1]}" for i in range(spd_bins)]
+#     plt.plot(plot_sig_data[:, :min_gen_plots-1].T)
+#     plt.xlabel('Number of Generations')
+#     plt.ylabel('Optimization Covariance Indicating Convergence (Sigma)')
+#     spd_names = ['Slow walking bin', 'Normal walking bin', 'Fast walking bin']
+#     plt.legend(spd_names)
+#     plt.show()
+
+#     # Calculate absolute error metrics
+#     err = plot_mean_data - np.expand_dims(goal_all, axis=1)
+#     abs_err = np.abs(err[:, :, 0]) + np.abs(err[:, :, 1])
+#     abs_err = abs_err.T
+#     mean_abs_err = np.mean(abs_err[:min_gen_plots, :], axis=-1)
+#     std_abs_err = np.std(abs_err[:min_gen_plots, :], axis=-1)
+
+#     # Plot individual bin optimization results
+#     fig, ax = plt.subplots(spd_bins, 1, figsize=[6.4, 8])
+#     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+#     plot_indiv_run = False
+
+#     for i in range(spd_bins):
+#         if plot_indiv_run:
+#             ax[i].plot(all_mean_data[i, :num_gens_cma, 1], all_mean_data[i, :num_gens_cma, 0], color=colors[i])
+#             ax[i].scatter(all_mean_data[i, 0, 1], all_mean_data[i, 0, 0], marker='o', color=colors[i])
+#             ax[i].scatter(all_mean_data[i, num_gens_cma-1, 1], all_mean_data[i, num_gens_cma-1, 0], marker='x', color=colors[i])
+#             goal = goal_all[i, :]
+#         else:
+#             ax[i].plot(plot_mean_data[i, :num_gens_cma, 1], plot_mean_data[i, :num_gens_cma, 0], color=colors[i])
+#             ax[i].scatter(plot_mean_data[i, 0, 1], plot_mean_data[i, 0, 0], marker='o', color=colors[i], label='Starting parameters')
+#             ax[i].scatter(plot_mean_data[i, num_gens_cma-1, 1], plot_mean_data[i, num_gens_cma-1, 0], marker='x', color=colors[i], label='Final parameters')
+#             goal = goal_all[i, :]
+
+#         # Add goal parameters as red stars
+#         ax[i].scatter(goal[1], goal[0], color='red', marker='*', s=150, label='Goal parameters')
+
+#         # Axes labels and title
+#         ax[i].set_xlabel('Rise Time')
+#         ax[i].set_ylabel('Peak Torque')
+#         ax[i].set_title(spd_names[i])
+#         ax[i].legend()
+
+#     fig.subplots_adjust(hspace=0.5)
+#     plt.show()
+
 def plot_single_mode(plot_sig_data, plot_rew_data, plot_mean_data, goal_all, num_gens_cma, spd_bins, bins, gen_counter):
+    """
+    Generalized function to handle any number of bins and plot optimization results.
+    """
     all_mean_data = np.copy(plot_mean_data)
-    min_gen_plots = num_gens_cma +1#- 2
-    plt.figure() # sigmas over time
-    labels = []
-    for i in range(spd_bins):
-        labels.append(str(bins[i]) + ' to '+str(bins[i+1]))
-    plt.plot(plot_sig_data[:,:min_gen_plots-1].T)#, label='A')# = labels)
+    min_gen_plots = num_gens_cma + 1
+
+    # Plot sigma data
+    plt.figure()
+    labels = [f"{bins[i]} to {bins[i+1]}" for i in range(spd_bins)]
+    plt.plot(plot_sig_data[:, :min_gen_plots - 1].T)
     plt.xlabel('Number of Generations')
     plt.ylabel('Optimization Covariance Indicating Convergence (Sigma)')
-    spd_names = ['Slow walking bin','Normal walking bin','Fast walking bin']
-    plt.legend(spd_names)
+    plt.legend(labels, title="Speed Bins")
     plt.show()
 
-    err = plot_mean_data - np.expand_dims(goal_all, axis=1) # f_params
-    abs_err = np.abs(err[:,:,0]) + np.abs(err[:,:,1])
+    # Calculate errors
+    err = plot_mean_data - np.expand_dims(goal_all, axis=1)  # Difference from goal
+    abs_err = np.abs(err[:, :, 0]) + np.abs(err[:, :, 1])
     abs_err = abs_err.T
-    mean_abs_err = np.mean(abs_err[:min_gen_plots,:],axis=-1)
-    std_abs_err = np.std(abs_err[:min_gen_plots,:],axis=-1)
+    mean_abs_err = np.mean(abs_err[:min_gen_plots, :], axis=-1)
+    std_abs_err = np.std(abs_err[:min_gen_plots, :], axis=-1)
 
-    fig, ax = plt.subplots(spd_bins,1, figsize = [6.4, 8])
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-    r = 0
+    # Create subplots for each bin
+    fig, ax = plt.subplots(spd_bins, 1, figsize=(6.4, 2 * spd_bins))
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
     plot_indiv_run = False
+
     for i in range(spd_bins):
         if plot_indiv_run:
-            ax[i].plot(all_mean_data[i, :num_gens_cma, 1, r], all_mean_data[i, :num_gens_cma, 0, r], color=colors[i])
-            ax[i].scatter(all_mean_data[i, 0, 1, r], all_mean_data[i, 0, 0, r], marker='o', color=colors[i])
-            ax[i].scatter(all_mean_data[i, num_gens_cma, 1, r], all_mean_data[i, num_gens_cma, 0, r], marker='x', color=colors[i])
-            goal = f_params[i,:]*f_mult[r] + f_offset[r]
+            # Individual run plotting (if enabled)
+            r = 0  # Placeholder for run index, adjust if needed
+            ax[i].plot(all_mean_data[i, :num_gens_cma, 1, r], all_mean_data[i, :num_gens_cma, 0, r], color=colors[i % len(colors)])
+            ax[i].scatter(all_mean_data[i, 0, 1, r], all_mean_data[i, 0, 0, r], marker='o', color=colors[i % len(colors)])
+            ax[i].scatter(all_mean_data[i, num_gens_cma, 1, r], all_mean_data[i, num_gens_cma, 0, r], marker='x', color=colors[i % len(colors)])
         else:
-            ax[i].plot(plot_mean_data[i, :num_gens_cma, 1], plot_mean_data[i, :num_gens_cma, 0], color=colors[i])
-            ax[i].scatter(plot_mean_data[i, 0, 1], plot_mean_data[i, 0, 0], marker='o', color=colors[i], label='Starting parameters')
-            ax[i].scatter(plot_mean_data[i, num_gens_cma-1, 1], plot_mean_data[i, num_gens_cma-1, 0], marker='x', color=colors[i], label='Final parameters')
-            goal = goal_all[i,:]
+            # Plot aggregated mean data for the bin
+            ax[i].plot(plot_mean_data[i, :num_gens_cma, 1], plot_mean_data[i, :num_gens_cma, 0], color=colors[i % len(colors)])
+            ax[i].scatter(plot_mean_data[i, 0, 1], plot_mean_data[i, 0, 0], marker='o', color=colors[i % len(colors)], label='Starting parameters')
+            ax[i].scatter(plot_mean_data[i, num_gens_cma - 1, 1], plot_mean_data[i, num_gens_cma - 1, 0], marker='x', color=colors[i % len(colors)], label='Final parameters')
+        
+        # Add goal parameters as red stars
+        ax[i].scatter(goal_all[i, 1], goal_all[i, 0], color='red', marker='*', s=150, label='Goal parameters')
 
+        # Set labels and titles dynamically
         ax[i].set_xlabel('Rise Time')
         ax[i].set_ylabel('Peak Torque')
-        ax[i].set_title(spd_names[i])
-    ax[i].legend()
+        ax[i].set_title(f'Bin {i+1}: {labels[i]}')
+
+    # Add a single legend at the bottom of the figure
+    fig.legend(
+        loc='lower center',
+        bbox_to_anchor=(0.5, -0.05),
+        ncol=spd_bins,
+        title="Legend",
+        frameon=False
+    )
+    
+    # Adjust layout for better visibility
     fig.subplots_adjust(hspace=0.5)
     plt.show()

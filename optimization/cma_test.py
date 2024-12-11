@@ -34,7 +34,7 @@ np.random.seed(seed) # initializing randomization for consitent results between 
 N = 2 # Number of optimization dimensions (2 torque parameters for peak torque magnitude and rise time)
 f_params = np.array([[0.64051748, 0.58666667],[0.72715882,0.70916667],[0.80887392,0.85]]) # initial values of the torque parameters (peak torque, rise time) for the three optimization bins based on the ranges of walking speed
 # f_params = np.array([[0.64051748, 0.58666667],[0.72715882,0.70916667],[0.80887392,0.85],[0.81887392,0.857]]) # initial values of the torque parameters (peak torque, rise time) for the three optimization bins based on the ranges of walking speed
-m = 'Normal' #'Re-initialization' # 
+m = 'Re-initialization' #'Normal' #'Re-initialization' # 
 bins = np.array([0.9, 1.24, 1.42, 1.75]) # defining speed ranges of the bins
 # bins = np.array([0.9, 1.24, 1.42, 1.75, 1.8]) # defining speed ranges of the bins
 
@@ -68,6 +68,7 @@ plot_sig_data = np.zeros((spd_bins,num_gens_cma+1))
 plot_sig_data[:,0] = sigma
 plot_rew_data = np.zeros((spd_bins,num_gens_cma+1))
 goal = f_params*f_mult + f_offset # computing simulated "optimal" parameters
+print("GOAL ",goal)
 plot_rew_data[:,0] = f_all(goal, meas_noise, x_mean)
 plot_mean_data = np.zeros((spd_bins,num_gens_cma+1, N))
 plot_mean_data[:,0,:] = x_mean
@@ -103,6 +104,8 @@ for i, spd in enumerate(cond_speeds): # handle each simulated walking bout seque
     cma_data = [i, bin_gen_data, bin_gen_params, plot_sig_data, plot_rew_data, plot_mean_data, bin_opt_vars, cond_counter, gen_counter] # save cma values
 opt_results =  bin_opt_vars # save optimization parameters
 
+
+print(np.max(plot_sig_data[:, -12]))
 # plotting code
 print("Mode", m)
 plot_single_mode(plot_sig_data, plot_rew_data, plot_mean_data, goal, num_gens_cma, spd_bins, bins, gen_counter)

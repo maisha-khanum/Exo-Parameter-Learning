@@ -12,43 +12,48 @@ import numpy.matlib
 from scipy.sparse.linalg import svds
 import matplotlib.pyplot as plt
 from helper import init_constants, reinit_bin_upd, upd_plot_data, sample_param, f_multi, f_all, rank_params, cma_multi, cma_update, init_opt_vars, init_xmean, constrain_params, plot_single_mode
-from bins_helper import initialize_params, calculate_constrained_bin_edges
+from bins_helper import initialize_params, calculate_constrained_bin_edges, calculate_bin_edges_from_sizes
 import os
-from scipy.stats import norm
-
+from scipy.stats import norm, gaussian_kde
+import matplotlib.cm as cm
+import os
 
 # CMA parameters (tweak these to change the outcome of the simulation)
-num_gens_cma = 9 # number of generations before simulation terminates (adjust for longer or shorter optimizations)
+num_gens_cma = 12 # number of generations before simulation terminates (adjust for longer or shorter optimizations)
 meas_noise = 0.001 # noise in CMA estimates
 offset_std_in_params = 0.1 # standard deviation of the "true" parameters, increase to make the optimal parameters spread over a larger range
 scalar_std_in_params = 0.1 # underlying scalar offset of "true" parameters, increase to make the optimal parameters spread over a larger range
 init_sigma_val = 0.2 # initial sigma value, controlling the covariance (similar to the range) of the first CMA generation.
-# speed_type = 'normal' # 'uniform' # type of distribution to sample walking speed from
-speed_type = 'uniform' # 'uniform' # type of distribution to sample walking speed from
+speed_type = 'normal' # 'uniform' # type of distribution to sample walking speed from
+# speed_type = 'uniform' # 'uniform' # type of distribution to sample walking speed from
 speed_mean = 1.35 # mean value for the walking speed distribution m/s for the normal distribution
 speed_std = 0.15 # standard deviation in walking speed distribution (m/s)
 meta_plot = [] # storing data to plot
 start_time = time.time() # saving initial timestamp
 min_val = 0.9
 max_val = 1.75
-spd_bins = 2
+
 
 # Optimization parameter definitions (not recommended to change these)
 weight = 68 # Participant weight (kg) used to normalize the peak torque magnitude
-seed = 3 # randomization seed
+seed = 2 # randomization seed
 random.seed(seed) # initializing randomization for consitent results between runs
 np.random.seed(seed) # initializing randomization for consitent results between runs
 N = 2 # Number of optimization dimensions (2 torque parameters for peak torque magnitude and rise time)
 # m = 'Normal' #'Re-initialization' #
 m = 'Re-initialization'
 bin = 0 # initalize bin parameter to 0
-bins = calculate_constrained_bin_edges(speed_mean, speed_std, spd_bins, min_val, max_val)
+# bins = calculate_constrained_bin_edges(speed_mean, speed_std, spd_bins, min_val, max_val)
+# best_state = (10, 10, 20, 50, 10)
+best_state = (33,34,33)
+spd_bins = len(best_state)
+bins =  calculate_bin_edges_from_sizes(speed_mean, speed_std, list(best_state), min_val, max_val)
 
 torque_range = (0.6, 0.85)  # Example range for peak torque
 rise_time_range = (0.55, 0.9)  # Example range for rise time
 
 f_params = initialize_params(spd_bins, torque_range, rise_time_range) # initial values of the torque parameters (peak torque, rise time) for the three optimization bins based on the ranges of walking speed
-# print(f_params)
+print(f_params)
 sigma = init_sigma_val*np.ones(spd_bins) # initalize the CMA optimization sigma, controlling the covariance
 λ, constants = init_constants(N, num_gens_cma) # initialized optimization constant values
 param_bounds = np.zeros((N,2)) # defining an array to store the bounds of the torque parameters
@@ -67,7 +72,7 @@ f_mult = np.random.uniform(low=1-scalar_std_in_params, high=1+scalar_std_in_para
 if speed_type == 'normal':
     cond_speeds = np.random.normal(loc=speed_mean, scale=speed_std, size=num_gens_cma*λ)
 elif speed_type == 'uniform':
-    cond_speeds = np.random.uniform(low=speed_mean-speed_std, high=speed_mean+speed_std, size=num_gens_cma*λ)
+    cond_speeds = np.random.uniform(low=speed_mean-2*speed_std, high=speed_mean+2*speed_std, size=num_gens_cma*λ)
 
 # defining matrices to store the optimization parameters and relevant plotting data
 x_mean = init_xmean(bins, N, f_params, np.linspace(0.8, 1.7, spd_bins )) # starting param values
@@ -121,3 +126,25 @@ plot_single_mode(plot_sig_data, plot_rew_data, plot_mean_data, goal, num_gens_cm
 meta_plot.append([plot_sig_data, plot_rew_data, plot_mean_data])
 print("Gen counts:", gen_counter)
 print("Run time (s):", time.time() - start_time)
+
+# # Generate KDE for smoothed probability density
+# kde = gaussian_kde(cond_speeds)
+# x_vals = np.linspace(min(cond_speeds), max(cond_speeds), 1000)
+# kde_vals = kde(x_vals)
+
+# # Plot the histogram
+# plt.figure(figsize=(10, 6))
+# plt.hist(cond_speeds, bins=20, density=True, alpha=0.5, color='gray', edgecolor='black', label='Walking Speed Histogram')
+
+# # Plot the KDE
+# plt.plot(x_vals, kde_vals, label='Probability Density (KDE)', color='blue', linewidth=2)
+
+# # Customize the plot
+# plt.title(speed_type + ' Probability Density vs. Walking Speed', fontsize=14)
+# plt.xlabel('Walking Speed (m/s)', fontsize=12)
+# plt.ylabel('Probability Density', fontsize=12)
+# plt.grid(True)
+# plt.legend()
+# # plt.savefig(os.path.join(visualization_folder, 'density_with_colored_bins.png'), dpi=300)
+# # plt.close()
+# plt.show()
